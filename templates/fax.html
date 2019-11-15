@@ -1,0 +1,24 @@
+{% extends "bootstrap/base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block title %}
+Fax Submission
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for message in messages %}
+      <div class="alert alert-success" role="alert">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+  <form method="POST" action="/" enctype="multipart/form-data">
+    <dl>
+    {{ wtf.quick_form(form) }}
+    <input class="btn btn-primary" type="submit" value="Send">
+    </dl>
+  </form>
+</div>
+{% endblock %}
