@@ -1,49 +1,64 @@
 import os
 import requests
-import smtplib
 import twilio
-from email.message import EmailMessage
 from twilio.rest import Client
-from flask import Flask, request, url_for, Response
+from twilio.request_validator import RequestValidator
+from flask import Flask, request, url_for, Response, abort
+from flask_mail import Mail, Message
+from functools import wraps
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or os.urandom(32)
 app.config['TWILIO_ACCOUNT_SID'] = os.getenv('TWILIO_ACCOUNT_SID')
 app.config['TWILIO_ACCOUNT_TOKEN'] = os.getenv('TWILIO_ACCOUNT_TOKEN')
-app.config['EMAIL_HOST'] = os.getenv('EMAIL_HOST')
-app.config['EMAIL_PORT'] = os.getenv('EMAIL_PORT')
-app.config['EMAIL_FROM'] = os.getenv('EMAIL_FROM')
-app.config['EMAIL_TO'] = os.getenv('EMAIL_TO') or app.config['EMAIL_FROM']
-app.config['EMAIL_PASSWORD'] = os.getenv('EMAIL_PASSWORD')
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
+app.config['MAIL_PORT'] = os.getenv('MAIL_PORT')
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', False)
+app.config['MAIL_USE_SSL'] = os.getenv('MAIL_USE_SSL', False)
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_TO'] = os.getenv('MAIL_TO') or app.config['MAIL_USERNAME']
+mail = Mail(app)
 
 app.client = Client(
     app.config['TWILIO_ACCOUNT_SID'],
     app.config['TWILIO_ACCOUNT_TOKEN']
 )
 
-@app.route('/fax/sent', methods=['POST'])
-def fax_sent():
-    accept_url = url_for('fax_received')
-    twiml = f'<Response><Receive action="{accept_url}"/></Response>'
+def twilio_originating(f):
+    """This decorator ensures that we only accept requests from Twilio."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        validator = RequestValidator(app.config['TWILIO_ACCOUNT_TOKEN'])
+        if not validator.validate(request.url, request.form, request.headers.get('X-Twilio-Signature', '')):
+            abort(401)
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/fax/incoming', methods=['POST'])
+@twilio_originating
+def fax_incoming():
+    accept_url = url_for('fax_received', _external=True)
+    twiml = '<Response><Receive action="{}"/></Response>'.format(accept_url)
     return Response(twiml, mimetype='text/xml')
 
 
 @app.route('/fax/received', methods=['POST'])
+@twilio_originating
 def fax_received():
 
     # Fetch the fax from Twilio's server
     fax = requests.get(request.form.get('MediaUrl'))
 
     # Send the received fax file as an email attachment
-    msg = EmailMessage()
-    msg['Subject'] = 'Fax from {} received.'.format(request.form.get('From'))
-    msg['From'] = app.config['EMAIL_FROM']
-    msg['To'] = app.config['EMAIL_TO']
-    msg.add_attachment(fax.content, maintype='application', subtype='pdf')
-
-    with smtplib.SMTP_SSL(app.config['EMAIL_HOST'], app.config['EMAIL_PORT']) as server:
-        server.login(app.config['EMAIL_FROM'], app.config['EMAIL_PASSWORD'])
-        server.send_message(msg)
+    msg = Message(
+        'Fax from {} received.'.format(request.form.get('From')),
+        sender=app.config['MAIL_USERNAME'],
+        recipients=[app.config['MAIL_TO']]
+    )
+    msg.attach('fax.pdf', 'application/pdf', fax.content)
+    mail.send(msg)
 
     # Finally, we can cleanup and remove the fax from Twilio's servers.
     app.client.fax.faxes(request.form.get('FaxSid')).delete()
