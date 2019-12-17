@@ -40,14 +40,14 @@ def twilio_originating(f):
 @app.route('/fax/incoming', methods=['POST'])
 @twilio_originating
 def fax_incoming():
-    accept_url = url_for('fax_received', _external=True)
+    accept_url = url_for('fax_receive', _external=True)
     twiml = '<Response><Receive action="{}"/></Response>'.format(accept_url)
     return Response(twiml, mimetype='text/xml')
 
 
-@app.route('/fax/received', methods=['POST'])
+@app.route('/fax/receive', methods=['POST'])
 @twilio_originating
-def fax_received():
+def fax_receive():
 
     # Fetch the fax from Twilio's server
     fax = requests.get(request.form.get('MediaUrl'))
