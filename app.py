@@ -19,6 +19,7 @@ app.config['MAIL_USE_SSL'] = os.getenv('MAIL_USE_SSL', False)
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_TO'] = os.getenv('MAIL_TO') or app.config['MAIL_USERNAME']
+app.config['MAIL_FROM'] = os.getenv('MAIL_FROM') or app.config['MAIL_USERNAME']
 mail = Mail(app)
 
 app.client = Client(
@@ -54,7 +55,7 @@ def fax_received():
     # Send the received fax file as an email attachment
     msg = Message(
         'Fax from {} received.'.format(request.form.get('From')),
-        sender=app.config['MAIL_USERNAME'],
+        sender=app.config['MAIL_FROM'],
         recipients=[app.config['MAIL_TO']]
     )
     msg.attach('fax.pdf', 'application/pdf', fax.content)
